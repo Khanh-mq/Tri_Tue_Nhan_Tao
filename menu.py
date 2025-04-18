@@ -32,7 +32,6 @@ class MainMenu:
         self.sound_enabled = True
         self.setup_menu()
         self.needs_redraw = True
-        self.click_sound = self.create_click_sound()
         self.load_background_music()
 
     def load_background_music(self):
@@ -42,21 +41,30 @@ class MainMenu:
             pygame.mixer.music.set_volume(0.5)
             if self.sound_enabled:
                 pygame.mixer.music.play(-1)
+                print(f"Background music started, sound_enabled={self.sound_enabled}")
+            else:
+                print(f"Background music loaded but not played, sound_enabled={self.sound_enabled}")
         except Exception as e:
             print(f"Error loading music: {e}")
 
     def stop_background_music(self):
-        """Stop background music"""
+        """Stop and unload background music"""
         if pygame.mixer.music.get_busy():
             pygame.mixer.music.stop()
+            print("Background music stopped")
+        pygame.mixer.music.unload()
+        print("Background music unloaded")
 
     def toggle_sound(self):
-        """Toggle sound state and update music"""
+        """Toggle background music state"""
         self.sound_enabled = not self.sound_enabled
         self.needs_redraw = True
         if self.sound_enabled:
             try:
-                pygame.mixer.music.play(-1)  # Phát lại nhạc ngay lập tức
+                pygame.mixer.music.load("intro.mp3")
+                pygame.mixer.music.set_volume(0.5)
+                pygame.mixer.music.play(-1)
+                print(f"Background music restarted, sound_enabled={self.sound_enabled}")
             except Exception as e:
                 print(f"Error playing music: {e}")
         else:
@@ -77,22 +85,6 @@ class MainMenu:
         for i, text in enumerate(button_texts):
             rect = pygame.Rect(center_x, start_y + i * (BUTTON_HEIGHT + BUTTON_SPACING), BUTTON_WIDTH, BUTTON_HEIGHT)
             self.buttons.append({"text": text, "rect": rect})
-
-    def create_click_sound(self):
-        try:
-            freq = 440
-            duration = 0.1
-            sample_rate = 44100
-            t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
-            wave = (np.sin(2 * np.pi * freq * t) * 32767).astype(np.int16)
-            stereo_wave = np.column_stack((wave, wave)).flatten().tobytes()
-            return pygame.mixer.Sound(buffer=stereo_wave)
-        except:
-            return None
-
-    def play_click_sound(self):
-        if self.sound_enabled and self.click_sound:
-            self.click_sound.play()
 
     def show_instructions(self, screen):
         instructions = [
@@ -124,7 +116,10 @@ class MainMenu:
         self.needs_redraw = True
         if self.sound_enabled:
             try:
+                pygame.mixer.music.load("intro.mp3")
+                pygame.mixer.music.set_volume(0.5)
                 pygame.mixer.music.play(-1)
+                print("Background music restarted after instructions")
             except Exception as e:
                 print(f"Error playing music: {e}")
 
@@ -173,13 +168,10 @@ class MainMenu:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for button in self.buttons:
                 if button["rect"].collidepoint(event.pos):
-                    self.play_click_sound()
                     text = button["text"]
                     if text == "AI":
-                        self.stop_background_music()
                         return "play_ai"
                     elif text == "Human":
-                        self.stop_background_music()
                         return "play_human"
                     elif text == "Instructions":
                         self.show_instructions(screen)

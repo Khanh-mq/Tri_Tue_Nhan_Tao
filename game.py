@@ -11,50 +11,69 @@ menu = MainMenu()
 pygame.init()
 
 class Connect6:
-    def __init__(self, size=19, ai_enabled=True, time_limit=300):  # time_limit in seconds (5 minutes default)
+    def __init__(self, size=19, ai_enabled=True, time_limit=300 ,  sound_enabled = True ):  # time_limit in seconds (5 minutes default)
         self.size = size
         self.cell_size = 30
         self.screen_width = size * self.cell_size
-        self.screen_height = size * self.cell_size + 50  # Extra space for status and timers
+        self.screen_height = size * self.cell_size + 50
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
         pygame.display.set_caption("Connect6")
         self.font = pygame.font.SysFont("arial", 24)
         self.button_font = pygame.font.SysFont("arial", 30)
-        self.winner_font = pygame.font.SysFont("arial", 48, bold=True)  # Larger font for winner text
-        self.clock = pygame.time.Clock()  # Add clock for controlling frame rate
-        
-        self.board = np.zeros((size, size), dtype=int)  # Game board
-        self.players = {1: "X", 2: "O"}  # Players: 1 is Black (human), 2 is White (AI)
-        self.turn = 1  # Initial turn is player 1
-        self.move_count = 0  # Moves made in current turn
-        self.moves_per_turn = 1  # First turn places 1 piece
+        self.winner_font = pygame.font.SysFont("arial", 48, bold=True)
+        self.clock = pygame.time.Clock()
+        self.board = np.zeros((size, size), dtype=int)
+        self.players = {1: "X", 2: "O"}
+        self.turn = 1
+        self.move_count = 0
+        self.moves_per_turn = 1
         self.ai_enabled = ai_enabled
         self.status_text = ""
         self.game_over = False
-        
-        
-        # Game state: "main_menu", "playing", "game_over"
         self.game_state = "playing"
-        
-        # Initialize MainMenu
-        self.main_menu = MainMenu()
-        
-        # Store last placed positions for highlighting
-        self.last_placed = []  # List of (x, y) positions to highlight
-        
-        # Timer setup
-        self.time_limit = time_limit  # Total time per player in seconds
-        self.player1_time = time_limit  # Time for Player 1 (Black)
-        self.player2_time = time_limit  # Time for Player 2 (White/AI)
-        self.last_update_time = pygame.time.get_ticks() / 1000.0  # Last time update in seconds
-        
-        # Game over menu buttons
+        self.last_placed = []
+        self.time_limit = time_limit
+        self.player1_time = time_limit
+        self.player2_time = time_limit
+        self.last_update_time = pygame.time.get_ticks() / 1000.0
         self.play_again_rect = pygame.Rect(self.screen_width // 2 - 150, self.screen_height // 2 + 80, 120, 50)
         self.quit_rect = pygame.Rect(self.screen_width // 2 + 30, self.screen_height // 2 + 80, 120, 50)
-
-        # Async event loop for AI moves
         self.loop = asyncio.get_event_loop()
+        self.sound_enabled = sound_enabled
+        self.place_sound = self.create_place_sound()
+        if not self.sound_enabled:
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+            print(f"Connect6 initialized with sound_enabled={self.sound_enabled}, music stopped, music_busy={pygame.mixer.music.get_busy()}")
+        else:
+            print(f"Connect6 initialized with sound_enabled={self.sound_enabled}, music continues, music_busy={pygame.mixer.music.get_busy()}")
+            
+            
+            
+    def create_place_sound(self):
+        """Create a sound for placing a piece"""
+        try:
+            freq = 660
+            duration = 0.05
+            sample_rate = 44100
+            t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+            wave = (np.sin(2 * np.pi * freq * t) * 32767).astype(np.int16)
+            stereo_wave = np.column_stack((wave, wave)).flatten().tobytes()
+            return pygame.mixer.Sound(buffer=stereo_wave)
+        except Exception as e:
+            print(f"Error creating place sound: {e}")
+            return None
 
+
+    def play_place_sound(self):
+        """Play sound when placing a piece"""
+        print(f"play_place_sound: sound_enabled={self.sound_enabled}, music_busy={pygame.mixer.music.get_busy()}")
+        if self.place_sound:
+            self.place_sound.play()
+        else:
+            print("No place sound played (place_sound is None)")
+ 
+            
     def reset_game(self):
         """Reset the game state for a new game"""
         self.board = np.zeros((self.size, self.size), dtype=int)
@@ -182,27 +201,39 @@ class Connect6:
         if 0 <= x < self.size and 0 <= y < self.size and self.board[x, y] == 0:
             self.place_piece(x, y)
 
+    # def handle_menu_click(self, pos):
+    #     """Handle clicks on the game over menu"""
+    #     if self.play_again_rect.collidepoint(pos):
+    #         self.reset_game()
+    #         self.game_state='playing'
+    #         return True  , 'continue' # Continue the game
+    #     elif self.quit_rect.collidepoint(pos):
+    #         self.game_state = "main_menu"  # Return to main menu instead of quitting
+    #         self.main_menu.needs_redraw = True  # Force redraw of main menu
+    #         return True , 'menu'
+    #     return True  , 'continue' # Continue showing the menu
     def handle_menu_click(self, pos):
         """Handle clicks on the game over menu"""
         if self.play_again_rect.collidepoint(pos):
             self.reset_game()
-            self.game_state='playing'
-            return True  , 'continue' # Continue the game
+            self.game_state = "playing"
+            return True, "continue"
         elif self.quit_rect.collidepoint(pos):
-            self.game_state = "main_menu"  # Return to main menu instead of quitting
-            self.main_menu.needs_redraw = True  # Force redraw of main menu
-            return True , 'menu'
-        return True  , 'continue' # Continue showing the menu
+            self.game_state = "main_menu"
+            return False, "menu"
+        return True, "continue"
 
+    
     def place_piece(self, x, y):
-        """Place a piece, check for win, and highlight the cell"""
+        """Place a piece, play sound, check for win, and highlight the cell"""
         if self.game_over:
             return
         
         self.board[x, y] = self.turn
-        self.last_placed.append((x, y))  # Add position to highlight
+        self.last_placed.append((x, y))
+        self.play_place_sound()
         self.move_count += 1
-        self.draw_board()  # Draw immediately to show highlight
+        self.draw_board()
         
         if self.check_win(self.turn):
             self.status_text = f"Player {self.players[self.turn]} wins!"
@@ -211,9 +242,9 @@ class Connect6:
             return
         
         if self.move_count >= self.moves_per_turn:
-            self.turn = 3 - self.turn  # Switch turn
+            self.turn = 3 - self.turn
             self.move_count = 0
-            self.moves_per_turn = 2  # From second turn, place 2 pieces
+            self.moves_per_turn = 2
             if self.turn == 2 and self.ai_enabled:
                 self.status_text = "AI đang suy nghĩ..."
                 self.draw_board()
@@ -336,6 +367,7 @@ class Connect6:
                     break
             return min_eval
 
+
     def evaluate_board(self):
         """Evaluate the board state"""
         score = 0
@@ -346,8 +378,7 @@ class Connect6:
                     continue
                 for dx, dy in directions:
                     count_2, count_1 = 0, 0
-                    open_ends_2, open_ends_1 = 0, 0
-                    
+                    open_ends_2, open_ends_1 = 0, 0                
                     for step in range(6):
                         nx, ny = x + step * dx, y + step * dy
                         if 0 <= nx < self.size and 0 <= ny < self.size:
@@ -358,8 +389,7 @@ class Connect6:
                             else:
                                 break
                         else:
-                            break
-                    
+                            break               
                     if count_2 > 0:
                         before_x, before_y = x - dx, y - dy
                         after_x, after_y = x + count_2 * dx, y + count_2 * dy
@@ -373,26 +403,24 @@ class Connect6:
                         if (0 <= before_x < self.size and 0 <= before_y < self.size and self.board[before_x, before_y] == 0):
                             open_ends_1 += 1
                         if (0 <= after_x < self.size and 0 <= after_y < self.size and self.board[after_x, after_y] == 0):
-                            open_ends_1 += 1
-                    
+                            open_ends_1 += 1                  
                     if count_2 >= 5:
-                        score += 10000
+                        score += 100000
                     elif count_2 == 4 and open_ends_2 > 0:
-                        score += 1000
+                        score += 10000
                     elif count_2 == 3 and open_ends_2 > 1:
-                        score += 200
+                        score += 500
                     elif count_2 == 2 and open_ends_2 > 1:
-                        score += 50
+                        score += 3000
                     
                     if count_1 >= 5:
-                        score -= 5000
+                        score -= 70000
                     elif count_1 == 4 and open_ends_1 > 0:
-                        score -= 1000
+                        score -= 15000
                     elif count_1 == 3 and open_ends_1 > 1:
-                        score -= 200
+                        score -= 5000
                     elif count_1 == 2 and open_ends_1 > 1:
-                        score -= 50
-        
+                        score -= 500
         return score
 
     def has_open_five(self, player):
@@ -446,7 +474,7 @@ class Connect6:
         if self.game_over:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    return False, "quit"  # Thoát hoàn toàn
+                    return False, "quit"
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     continue_game, action = self.handle_menu_click(event.pos)
                     return continue_game, action
@@ -465,25 +493,31 @@ class Connect6:
 
     def run(self):
         """Main game loop, returns status when exiting"""
+        if not self.sound_enabled:
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+            print(f"Game started, sound_enabled={self.sound_enabled}, music stopped, music_busy={pygame.mixer.music.get_busy()}")
+        else:
+            print(f"Game started, sound_enabled={self.sound_enabled}, music continues, music_busy={pygame.mixer.music.get_busy()}")
         self.setup()
         running = True
         while running:
             continue_game, action = self.update_loop()
-            self.loop.run_until_complete(asyncio.sleep(0))  # Cho phép asyncio chạy
+            self.loop.run_until_complete(asyncio.sleep(0))
             if action == "menu":
-                return "menu"  # Quay lại menu chính
+                return "menu"
             elif action == "quit":
-                return "quit"  # Thoát chương trình
+                return "quit"
             if continue_game and not self.game_over:
                 self.clock.tick(60)
             else:
                 self.clock.tick(30)
-        return "quit"  # Mặc định thoát nếu vòng lặp kết thúc
+        return "quit"
 
 
-if __name__ == "__main__":
-    try:
-        game = Connect6(size=19, ai_enabled=True)
-        game.run()
-    finally:
-        pygame.quit()
+# if __name__ == "__main__":
+#     try:
+#         game = Connect6(size=19, ai_enabled=True)
+#         game.run()
+#     finally:
+#         pygame.quit()
